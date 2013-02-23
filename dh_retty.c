@@ -16,6 +16,7 @@ static int proxyfdm, proxyfd;
 static const char* app_name;
 static pid_t target_pid;
 static struct termios orig_tio;
+static int running;
 
 void read_from_fd(int fd, char* buf, size_t buf_size, size_t* read_size)
 {
@@ -72,6 +73,7 @@ int write_pty_fd()
 		return -1;
 	}
 	fprintf(fp, "%s\n", link_buf);
+	fprintf(fp, "%d\n", getpid());
 	fclose(fp);
 	return 0;
 }
@@ -189,6 +191,12 @@ void do_pty_proxy()
 	restore_can_terminal(0);
 }
 
+void on_signal(int signum)
+{
+	running = 0;
+	do_pty_proxy();
+}
+
 int main(int argc, char** argv)
 {
 	app_name = argv[0];
@@ -209,14 +217,14 @@ int main(int argc, char** argv)
 		return -1;
 	}
 
+	signal(10, on_signal);
 	kill(target_pid, 10);
 
-	sleep(2);
-
-	kill(target_pid, SIGSTOP);
-	kill(target_pid, SIGCONT);
-
-	do_pty_proxy();
+	running = 1;
+	while (running)
+	{
+		sleep(1);
+	}
 
 	printf("Done terminal proxy!\n");
 
