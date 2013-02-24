@@ -12,16 +12,8 @@
 
 static const char* app_name;
 
-static void on_signal(int signal_num)
+static int try_become_session_leader()
 {
-	int back_fd0, back_fd1, back_fd2;
-	struct termios tio;
-	if (tcgetattr(0, &tio)) {
-		fprintf(stderr, "%s: tcgetattr(): %s\n", app_name,
-				strerror(errno));
-		return; 
-	}
-#ifdef NEED_CTTY
 	pid_t child_pid = fork();
 	if (child_pid == 0)
 	{
@@ -29,10 +21,11 @@ static void on_signal(int signal_num)
 		{
 			fprintf(stderr, "%s: child setpgid(): %s\n", app_name,
 					strerror(errno));
-			return;
+			return -1;
 		}
 		sleep(-1);
 	}
+	setpgid(child_pid, 0);
 	while (1)
 	{
 		if (setpgid(0, child_pid) < 0)
@@ -47,10 +40,35 @@ static void on_signal(int signal_num)
 	{
 		fprintf(stderr, "%s: setsid(): %s\n", app_name,
 				strerror(errno));
-		return;
+		return -1;
 	}
 	kill(child_pid, 9);
 	wait(NULL);
+	return 0;
+}
+
+static int check_is_session_leader()
+{
+	pid_t sid = getsid(0);
+	pid_t gid = getpgid(0);
+	pid_t pid = getpid();
+	return (sid == gid) && (gid == pid); 
+}
+
+static void on_signal(int signal_num)
+{
+	int back_fd0, back_fd1, back_fd2;
+	struct termios tio;
+	if (tcgetattr(0, &tio)) {
+		fprintf(stderr, "%s: tcgetattr(): %s\n", app_name,
+				strerror(errno));
+		return; 
+	}
+#ifdef NEED_CTTY
+	if (!check_is_session_leader())
+	{
+		try_become_session_leader();
+	}
 #endif
 
 	char buf[50];
